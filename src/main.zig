@@ -1,5 +1,6 @@
 const std = @import("std");
 const rpc = @import("rpc.zig");
+const types = @import("type.zig");
 
 pub fn main() !void {
     const allocator = std.heap.page_allocator;
@@ -8,7 +9,14 @@ pub fn main() !void {
         std.log.warn("Error reading message: {}\n", .{err});
         return;
     };
-    errdefer allocator.free(message);
+    defer allocator.free(message);
+
+    const parse = try std.json.parseFromSlice(types.RequestMessage, allocator, message, .{});
+    defer parse.deinit();
+
+    if (!parse.value.validate()) {
+        return error.InvalidMessage;
+    }
 }
 
 comptime {

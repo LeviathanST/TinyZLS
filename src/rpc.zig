@@ -1,5 +1,4 @@
 const std = @import("std");
-const types = @import("types.zig");
 
 const LspError = error{
     HeaderTooLong,
@@ -7,7 +6,7 @@ const LspError = error{
     InvalidHeader,
 };
 
-/// return a message which is managed by `allocator`,
+/// return a message managed by `allocator`,
 /// need to use `free()` after finish
 pub fn readMessage(reader: anytype, allocator: std.mem.Allocator) ![]u8 {
     var buffer: [4 * 1024]u8 = undefined;
