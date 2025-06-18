@@ -1,22 +1,22 @@
 const std = @import("std");
-const rpc = @import("rpc.zig");
-const types = @import("type.zig");
+const Server = @import("Server.zig");
+const Transport = @import("Transport.zig");
 
 pub fn main() !void {
     const allocator = std.heap.page_allocator;
-    const stdin = std.io.getStdIn().reader();
-    const message = rpc.readMessage(stdin, allocator) catch |err| {
-        std.log.warn("Error reading message: {}\n", .{err});
-        return;
-    };
-    defer allocator.free(message);
+    std.log.info("Starting TinyZLS", .{});
 
-    const parse = try std.json.parseFromSlice(types.RequestMessage, allocator, message, .{});
-    defer parse.deinit();
+    const transport = try Transport.init(
+        allocator,
+        .{
+            .reader = std.io.getStdIn().reader().any(),
+            .writer = std.io.getStdOut().writer().any(),
+        },
+    );
+    var server: Server = .{ .transport = transport };
+    defer server.deinit();
 
-    if (!parse.value.validate()) {
-        return error.InvalidMessage;
-    }
+    try server.loop();
 }
 
 comptime {
