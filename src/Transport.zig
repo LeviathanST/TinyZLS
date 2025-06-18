@@ -1,12 +1,12 @@
 //! Transport via stdio
 const std = @import("std");
-const base_type = @import("base_type.zig");
+const base_type = @import("lsp.zig").base_type;
 
 const Transport = @This();
 
-arena: *std.heap.ArenaAllocator,
+_arena: *std.heap.ArenaAllocator,
 opts: TransportOpts,
-_allocator: std.mem.Allocator,
+allocator: std.mem.Allocator,
 
 pub const TransportOpts = struct {
     reader: std.io.AnyReader,
@@ -27,14 +27,15 @@ pub fn init(allocator: std.mem.Allocator, opts: TransportOpts) !Transport {
     arena.* = std.heap.ArenaAllocator.init(allocator);
 
     return .{
-        .arena = arena,
+        .allocator = arena.allocator(),
         .opts = opts,
-        ._allocator = allocator,
+        ._arena = arena,
     };
 }
 pub fn deinit(self: *Transport) void {
-    self.arena.deinit();
-    self._allocator.destroy(self.arena);
+    const alloc = self._arena.child_allocator;
+    self._arena.deinit();
+    alloc.destroy(self._arena);
 }
 
 /// This function use arena in the owner,
@@ -66,8 +67,8 @@ pub fn readMessage(self: Transport) ![]u8 {
         std.log.err("Not found `Content-Length: <length>`", .{});
         return ReadError.InvalidHeader;
     }
-    const json_str = try self.arena.allocator().alloc(u8, json_len.?);
-    errdefer self.arena.allocator().free(json_str);
+    const json_str = try self.allocator.alloc(u8, json_len.?);
+    errdefer self.allocator.free(json_str);
     // Read all the rest
     const bytes_read = try reader.readAll(json_str);
     if (bytes_read != json_len) {
@@ -76,23 +77,21 @@ pub fn readMessage(self: Transport) ![]u8 {
     return json_str;
 }
 
-pub fn sendMessage(self: Transport, res_or_req: anytype) !void {
+pub fn writeMessage(self: Transport, res_or_req: anytype) !void {
     const writer = self.opts.writer;
-    const alloc = self.arena.allocator();
+    const alloc = self.allocator;
     const json = try std.json.stringifyAlloc(
         alloc,
         res_or_req,
-        .{ .emit_null_optional_fields = true },
+        .{ .emit_null_optional_fields = true, .whitespace = .indent_2 },
     );
     defer alloc.free(json);
 
-    const content_length = try std.fmt.allocPrint(
+    const res_json = try std.fmt.allocPrint(
         alloc,
-        "Content-Length: {d}\r\n\r\n",
-        .{json.len},
+        "Content-Length: {d}\r\n\r\n{s}",
+        .{ json.len, json },
     );
-    defer alloc.free(content_length);
-
-    try writer.writeAll(content_length);
-    try writer.writeAll(json);
+    defer alloc.free(res_json);
+    try writer.writeAll(res_json);
 }
