@@ -1,7 +1,6 @@
 const std = @import("std");
 const tiny_zls = @import("tiny_zls");
-
-const base_type = tiny_zls.base_type;
+const base_type = tiny_zls.lsp.base_type;
 
 pub fn main() !void {
     std.log.info("Starting TinyZLS client", .{});
@@ -17,9 +16,16 @@ pub fn main() !void {
     const args = try std.process.argsAlloc(alloc);
     defer std.process.argsFree(alloc, args);
 
-    const req: base_type.RequestMessage = .{
+    const params: base_type.InitializeParams = .{};
+    const params_json = try std.json.stringifyAlloc(alloc, params, .{});
+    defer alloc.free(params_json);
+    const parsed = try std.json.parseFromSlice(std.json.Value, alloc, params_json, .{});
+    defer parsed.deinit();
+
+    const req: base_type.RequestJSONMessage = .{
         .id = 1,
         .method = "initialize",
+        .params = parsed.value,
     };
 
     var child: std.process.Child = .init(&.{args[1]}, alloc);
@@ -36,10 +42,13 @@ pub fn main() !void {
         },
     );
     defer transport.deinit();
-    try transport.sendMessage(req);
+    try transport.writeMessage(req);
     const res = try transport.readMessage();
+    std.log.debug("[Client] received from server: \n{s}", .{res});
 
-    std.log.debug("[Client] received from server: {s}", .{res});
+    try transport.writeMessage(req);
+    const res1 = try transport.readMessage();
+    std.log.debug("[Client] received from server: \n{s}", .{res1});
 
     _ = try child.kill();
 }
