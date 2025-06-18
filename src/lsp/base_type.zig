@@ -1,8 +1,12 @@
 const std = @import("std");
 const json = std.json;
 
-const integer = isize;
+pub const integer = isize;
 const any = json.Value;
+pub const LSPErrCode = enum(i32) {
+    ServerNotInitialized = -32002,
+    InvalidRequest = -32600,
+};
 
 /// https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/
 pub const RequestMessage = struct {
@@ -16,13 +20,13 @@ pub const RequestMessage = struct {
 pub const ResponseMessage = struct {
     const Self = @This();
     id: integer,
-    result: ?any,
-    @"error": ?ResponseError,
+    result: ?any = null,
+    @"error": ?ResponseError = null,
 
     const ResponseError = struct {
         code: integer,
         message: []const u8,
-        data: ?any,
+        data: ?any = null,
     };
 };
 
