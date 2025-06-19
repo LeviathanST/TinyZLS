@@ -7,7 +7,7 @@ const ReadError = Transport.ReadError;
 const Server = @This();
 const RequestMessage = base_type.RequestMessage(base_type.RequestParams);
 
-transport: Transport,
+transport: ?Transport = null,
 status: Status = .uninitialized,
 allocator: std.mem.Allocator,
 _arena: *std.heap.ArenaAllocator,
@@ -19,20 +19,26 @@ pub const Status = enum {
     shutdown,
 };
 
-pub fn init(transport: Transport, allocator: std.mem.Allocator) !Server {
+/// We not assign `transport` here for testing,
+/// please use `.setTransport()`.
+pub fn init(allocator: std.mem.Allocator) !Server {
     const arena = try allocator.create(std.heap.ArenaAllocator);
     arena.* = std.heap.ArenaAllocator.init(allocator);
     return .{
         .allocator = arena.allocator(),
-        .transport = transport,
         ._arena = arena,
     };
+}
+pub fn setTransport(self: *Server, transport: Transport) void {
+    self.*.transport = transport;
 }
 pub fn deinit(self: *Server) void {
     const alloc = self._arena.child_allocator;
     self._arena.deinit();
     alloc.destroy(self._arena);
-    self.transport.deinit();
+    if (self.transport) |transport| {
+        @constCast(&transport).deinit();
+    }
 }
 
 pub fn onInitialize(self: *Server, params: base_type.InitializeParams) !base_type.InitializeResult {
@@ -59,7 +65,7 @@ pub fn onInitialize(self: *Server, params: base_type.InitializeParams) !base_typ
 /// Main loop
 pub fn loop(self: *Server) !void {
     while (self.status != .shutdown) {
-        const message = self.transport.readMessage() catch |err| {
+        const message = self.transport.?.readMessage() catch |err| {
             std.log.err("Error reading message: {}\n", .{err});
             return err;
         };
@@ -83,31 +89,38 @@ pub fn parseRequest(self: Server, message: []const u8) !std.json.Parsed(base_typ
 }
 
 /// Assert in this function ensure `method` existed.
-pub fn sendMessage(self: *Server, comptime method: []const u8, params: base_type.ParamsType(method)) !void {
+pub fn sendMessage(
+    self: *Server,
+    comptime method: []const u8,
+    params: base_type.ParamsType(method),
+) !base_type.ResultType(method) {
     std.debug.assert(@hasField(base_type.RequestParams, method));
 
     const res = switch (@field(base_type.RequestParams, method)) {
         .initialize => try self.onInitialize(params),
         .other => .{},
     };
-    try self.transport.writeMessage(res);
+    return res;
 }
-pub fn sendMessageWithError(self: *Server, comptime method: []const u8, params: base_type.ParamsType(method), id: base_type.integer) !void {
-    self.sendMessage(method, params) catch |err| {
-        const res_err: base_type.ResponseJSONMessage = .{
-            .id = id,
-            .@"error" = .{
-                .code = switch (err) {
-                    error.InvalidRequest => @intFromEnum(base_type.LSPErrCode.InvalidRequest),
-                    else => unreachable,
+
+pub fn sendMessageToClient(self: *Server, comptime method: []const u8, params: base_type.ParamsType(method), id: base_type.integer) !void {
+    const res = blk: {
+        self.sendMessage(method, params) catch |err| {
+            const res_err: base_type.ResponseJSONMessage = .{
+                .id = id,
+                .@"error" = .{
+                    .code = switch (err) {
+                        error.InvalidRequest => @intFromEnum(base_type.LSPErrCode.InvalidRequest),
+                        else => unreachable,
+                    },
+                    .message = @errorName(err),
+                    .data = null,
                 },
-                .message = @errorName(err),
-                .data = null,
-            },
+            };
+            break :blk res_err;
         };
-        try self.transport.writeMessage(res_err);
-        return;
     };
+    try self.transport.?.writeMessage(res);
 }
 
 pub fn processRequest(self: *Server, message: []const u8) !void {
@@ -115,6 +128,6 @@ pub fn processRequest(self: *Server, message: []const u8) !void {
 
     switch (rm.params) {
         .other => std.log.err("Catch unknown req", .{}),
-        inline else => |params, method| try self.sendMessageWithError(@tagName(method), params, rm.id),
+        inline else => |params, method| try self.sendMessageToClient(@tagName(method), params, rm.id),
     }
 }

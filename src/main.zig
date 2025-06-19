@@ -2,9 +2,9 @@ const std = @import("std");
 const Server = @import("Server.zig");
 const Transport = @import("Transport.zig");
 
-const log_level: std.log.Level = .info;
+const log_level: std.log.Level = .debug;
 pub const std_options: std.Options = .{
-    .log_level = .debug,
+    .log_level = log_level,
     .logFn = logFn,
 };
 
@@ -14,7 +14,7 @@ fn logFn(
     comptime format: []const u8,
     args: anytype,
 ) void {
-    if (@intFromEnum(level) > @intFromEnum(log_level)) return;
+    if (@intFromEnum(level) > @intFromEnum(std_options.log_level)) return;
     _ = scoped;
     const color: []const u8 = comptime switch (level) {
         .err => "\x1b[31m",
@@ -34,7 +34,9 @@ fn logFn(
 
 pub fn main() !void {
     const allocator = std.heap.page_allocator;
+
     std.log.info("Starting TinyZLS", .{});
+    std.log.info("Log level: {s}", .{@tagName(log_level)});
 
     const transport = try Transport.init(
         allocator,
@@ -43,8 +45,9 @@ pub fn main() !void {
             .writer = std.io.getStdOut().writer().any(),
         },
     );
-    var server: Server = try .init(transport, allocator);
+    var server: Server = try .init(allocator);
     defer server.deinit();
+    server.setTransport(transport);
 
     try server.loop();
 }
