@@ -42,4 +42,21 @@ pub fn build(b: *std.Build) void {
         run_client_exe.addArtifactArg(exe);
         run_client_step.dependOn(&run_client_exe.step);
     }
+
+    {
+        const tests = b.addTest(.{
+            .root_source_file = b.path("tests/tests.zig"),
+            .target = target,
+            .optimize = optimize,
+            .test_runner = .{
+                .path = b.path("tests/test_runner.zig"),
+                .mode = .simple,
+            },
+        });
+        tests.root_module.addImport("tiny_zls", tiny_zls_module);
+
+        const run_test = b.addRunArtifact(tests);
+        const test_step = b.step("tests", "Run unit tests");
+        test_step.dependOn(&run_test.step);
+    }
 }
