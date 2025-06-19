@@ -9,9 +9,17 @@ pub fn ParamsType(comptime method: []const u8) type {
     if (!@hasField(RequestParams, method)) return void;
     return @FieldType(RequestParams, method);
 }
+pub fn ResultType(comptime method: []const u8) type {
+    if (!@hasField(ResponseResult, method)) return void;
+    return @FieldType(ResponseResult, method);
+}
 pub const RequestParams = union(enum) {
     initialize: InitializeParams,
     other: OtherMethod,
+};
+pub const ResponseResult = union(enum) {
+    initialize: InitializeResult,
+    other,
 };
 
 const OtherMethod = struct {};
