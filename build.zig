@@ -8,6 +8,7 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = optimize,
     });
+
     const lsp_module = b.addModule("lsp", .{
         .root_source_file = b.path("src/lsp/lsp.zig"),
         .target = target,
@@ -15,15 +16,8 @@ pub fn build(b: *std.Build) void {
     });
 
     {
-        b.installArtifact(exe);
-        const run_exe = b.addRunArtifact(exe);
-        const run_step = b.step("run", "Run the application");
-        run_step.dependOn(&run_exe.step);
-
-        const run_test_by_cmd = b.addSystemCommand(&.{ "sh", "-c", "zig test src/main.zig 2>&1 | cat" });
-        const test_step = b.step("test", "Run unit tests");
         exe.root_module.addImport("lsp", lsp_module);
-        test_step.dependOn(&run_test_by_cmd.step);
+        b.installArtifact(exe);
     }
 
     const tiny_zls_module = b.addModule("tiny_zls", .{
@@ -31,6 +25,7 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = optimize,
     });
+    tiny_zls_module.addImport("lsp", lsp_module);
 
     {
         // Sample client
@@ -43,8 +38,8 @@ pub fn build(b: *std.Build) void {
         client_exe.root_module.addImport("tiny_zls", tiny_zls_module);
         client_exe.root_module.addImport("lsp", lsp_module);
 
-        b.installArtifact(client_exe);
-        const run_client_exe = b.addRunArtifact(client_exe);
+        const ia = b.addInstallArtifact(client_exe, .{});
+        const run_client_exe = b.addRunArtifact(ia.artifact);
         const run_client_step = b.step("run-client", "Run the client application");
         run_client_exe.addArtifactArg(exe);
         run_client_step.dependOn(&run_client_exe.step);
@@ -61,9 +56,10 @@ pub fn build(b: *std.Build) void {
             },
         });
         tests.root_module.addImport("tiny_zls", tiny_zls_module);
+        tests.root_module.addImport("lsp", lsp_module);
 
         const run_test = b.addRunArtifact(tests);
-        const test_step = b.step("tests", "Run unit tests");
+        const test_step = b.step("test", "Run unit tests");
         test_step.dependOn(&run_test.step);
     }
 }
