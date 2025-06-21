@@ -1,6 +1,7 @@
 const std = @import("std");
+const lsp = @import("lsp");
 const tiny_zls = @import("tiny_zls");
-const base_type = tiny_zls.lsp.base_type;
+const base_type = lsp.base_type;
 
 pub fn main() !void {
     std.log.info("Starting TinyZLS client", .{});

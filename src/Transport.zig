@@ -1,6 +1,6 @@
 //! Transport via stdio
 const std = @import("std");
-const base_type = @import("lsp.zig").base_type;
+const base_type = @import("lsp").base_type;
 
 const Transport = @This();
 

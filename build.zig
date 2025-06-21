@@ -8,6 +8,11 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = optimize,
     });
+    const lsp_module = b.addModule("lsp", .{
+        .root_source_file = b.path("src/lsp/lsp.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
 
     {
         b.installArtifact(exe);
@@ -17,6 +22,7 @@ pub fn build(b: *std.Build) void {
 
         const run_test_by_cmd = b.addSystemCommand(&.{ "sh", "-c", "zig test src/main.zig 2>&1 | cat" });
         const test_step = b.step("test", "Run unit tests");
+        exe.root_module.addImport("lsp", lsp_module);
         test_step.dependOn(&run_test_by_cmd.step);
     }
 
@@ -35,6 +41,7 @@ pub fn build(b: *std.Build) void {
             .optimize = optimize,
         });
         client_exe.root_module.addImport("tiny_zls", tiny_zls_module);
+        client_exe.root_module.addImport("lsp", lsp_module);
 
         b.installArtifact(client_exe);
         const run_client_exe = b.addRunArtifact(client_exe);
