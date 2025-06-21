@@ -25,6 +25,7 @@ pub const Status = enum {
     uninitialized,
     initializing,
     initialized,
+    shutdown,
 };
 
 /// We not assign `transport` here for testing,
@@ -49,30 +50,24 @@ pub fn deinit(self: *Server) void {
     }
 }
 
-pub fn onInitialized(self: *Server) void {
-    if (self.status == .initialized) {
-        std.log.err("Server has been initialized!", .{});
+pub fn onInitialized(self: *Server) !void {
+    if (self.status != .initializing) {
+        std.log.err("Received a initialilzed notifcation but the server has not recevied initialize request!", .{});
         return error.InvalidRequest;
     }
-    if (self.status == .uninitialized) {
-        std.log.err("Please request to initialize server before notification!", .{});
-        return error.InvalidRequest;
-    }
+    std.log.debug("The server is initialized.", .{});
     self.*.status = .initialized;
 }
 pub fn onInitialize(self: *Server, params: base_type.InitializeParams) !base_type.InitializeResult {
     // TODO:
     _ = params;
     errdefer self.*.status = .uninitialized;
+    std.log.debug("The server is initializing.", .{});
 
     if (self.status == .initialized) {
-        std.log.err("The server has been initialized!", .{});
-        return error.InvalidRequest;
+        std.log.warn("The server has been initialized!", .{});
     }
-    if (self.status == .initializing) {
-        std.log.err("The server is initializing!", .{});
-        return error.InvalidRequest;
-    }
+
     self.*.status = .initializing;
     const result: base_type.InitializeResult = .{
         .capabilities = .{ .hoverProvider = true },
