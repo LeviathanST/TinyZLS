@@ -56,7 +56,6 @@ pub fn build(b: *std.Build) void {
             },
         });
         tests.root_module.addImport("tiny_zls", tiny_zls_module);
-        tests.root_module.addImport("lsp", lsp_module);
 
         const run_test = b.addRunArtifact(tests);
         const test_step = b.step("test", "Run unit tests");
