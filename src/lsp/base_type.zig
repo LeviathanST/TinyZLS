@@ -3,26 +3,7 @@ const std = @import("std");
 const json = std.json;
 
 pub const integer = isize;
-const any = json.Value;
-
-pub fn ParamsType(comptime method: []const u8) type {
-    if (!@hasField(RequestParams, method)) return void;
-    return @FieldType(RequestParams, method);
-}
-pub fn ResultType(comptime method: []const u8) type {
-    if (!@hasField(ResponseResult, method)) return void;
-    return @FieldType(ResponseResult, method);
-}
-pub const RequestParams = union(enum) {
-    initialize: InitializeParams,
-    other: OtherMethod,
-};
-pub const ResponseResult = union(enum) {
-    initialize: InitializeResult,
-    other,
-};
-
-const OtherMethod = struct {};
+pub const any = json.Value;
 
 pub const LSPErrCode = enum(i32) {
     ServerNotInitialized = -32002,
@@ -43,7 +24,7 @@ pub const ResponseJSONMessage = struct {
     result: ?any = null,
     @"error": ?ResponseError = null,
 
-    const ResponseError = struct {
+    pub const ResponseError = struct {
         code: integer,
         message: []const u8,
         data: ?any = null,
@@ -67,40 +48,3 @@ pub const InitializeResult = struct {
         }
     };
 };
-
-pub fn RequestMessage(comptime Params: type) type {
-    return struct {
-        const Self = @This();
-        jsonrpc: []const u8 = "2.0",
-        id: integer,
-        params: Params,
-
-        pub fn parseFromSlice(alloc: std.mem.Allocator, s: []const u8) !Self {
-            const parsed = try std.json.parseFromSlice(RequestJSONMessage, alloc, s, .{});
-            defer parsed.deinit();
-            const value: RequestJSONMessage = parsed.value;
-
-            var self = try alloc.create(Self);
-            errdefer alloc.destroy(self);
-            self.id = value.id;
-
-            const param_fields = std.meta.fields(Params);
-            inline for (param_fields) |f| {
-                if (std.mem.eql(u8, f.name, value.method)) {
-                    self.params = @unionInit(
-                        Params,
-                        f.name,
-                        (try std.json.parseFromValue(
-                            f.type,
-                            alloc,
-                            value.params.?,
-                            .{},
-                        )).value,
-                    );
-                }
-            }
-            self.*.id = value.id;
-            return self.*;
-        }
-    };
-}
