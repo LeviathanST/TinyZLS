@@ -26,14 +26,14 @@ pub const Result = union(enum) {
     pub fn jsonStringify(self: Result, stream: anytype) !void {
         const active = std.meta.activeTag(self);
         inline for (std.meta.fields(Result)) |f| {
-            if (f.type == void) {
+            if (f.type != void and std.mem.eql(u8, @tagName(active), f.name)) {
+                try stream.write(@field(self, f.name));
+            } else if (f.type == void and std.mem.eql(u8, @tagName(active), f.name)) {
                 try stream.objectField("result");
                 try stream.beginObject();
                 try stream.endObject();
                 return;
             }
-            if (std.mem.eql(u8, @tagName(active), f.name))
-                try stream.write(@field(self, f.name));
         }
     }
 };
