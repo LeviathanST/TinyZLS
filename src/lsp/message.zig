@@ -29,6 +29,7 @@ pub const Result = union(enum) {
         const active = std.meta.activeTag(self);
         inline for (std.meta.fields(Result)) |f| {
             if (f.type == void) {
+                try stream.objectField("result");
                 try stream.beginObject();
                 try stream.endObject();
                 return;
