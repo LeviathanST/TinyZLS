@@ -1,11 +1,20 @@
+//! Notification will be treated as request,
+//! but return `avoid` when processing
 const std = @import("std");
 
-const base_type = @import("lsp.zig").base_type;
+const lsp = @import("lsp");
+const base_type = lsp.base_type;
 const Transport = @import("Transport.zig");
 const ReadError = Transport.ReadError;
 
 const Server = @This();
-const RequestMessage = base_type.RequestMessage(base_type.RequestParams);
+
+const RequestMessage = lsp.RequestMessage;
+const ResponseMessage = lsp.ResponseMessage;
+const ParamTypes = lsp.ParamTypes;
+const ResultTypes = lsp.ResultTypes;
+const RequestParams = lsp.RequestParams;
+const Result = lsp.Result;
 
 transport: ?Transport = null,
 status: Status = .uninitialized,
@@ -45,15 +54,12 @@ pub fn onInitialize(self: *Server, params: base_type.InitializeParams) !base_typ
     // TODO:
     _ = params;
     errdefer self.*.status = .uninitialized;
+    std.log.debug("The server is initializing.", .{});
 
     if (self.status == .initialized) {
-        std.log.err("The server has been initialized!", .{});
-        return error.InvalidRequest;
+        std.log.warn("The server has been initialized!", .{});
     }
-    if (self.status == .initializing) {
-        std.log.err("The server is initializing!", .{});
-        return error.InvalidRequest;
-    }
+
     self.*.status = .initializing;
     const result: base_type.InitializeResult = .{
         .capabilities = .{ .hoverProvider = true },
@@ -64,7 +70,7 @@ pub fn onInitialize(self: *Server, params: base_type.InitializeParams) !base_typ
 
 /// Main loop
 pub fn loop(self: *Server) !void {
-    while (self.status != .shutdown) {
+    while (true) {
         const message = self.transport.?.readMessage() catch |err| {
             std.log.err("Error reading message: {}\n", .{err});
             return err;
@@ -92,21 +98,26 @@ pub fn parseRequest(self: Server, message: []const u8) !std.json.Parsed(base_typ
 pub fn sendMessage(
     self: *Server,
     comptime method: []const u8,
-    params: base_type.ParamsType(method),
-) !base_type.ResultType(method) {
-    std.debug.assert(@hasField(base_type.RequestParams, method));
+    params: ParamTypes(method),
+) !ResultTypes(method) {
+    std.debug.assert(@hasField(RequestParams, method));
 
-    const res = switch (@field(base_type.RequestParams, method)) {
+    const res = switch (@field(RequestParams, method)) {
         .initialize => try self.onInitialize(params),
         .other => .{},
     };
     return res;
 }
 
-pub fn sendMessageToClient(self: *Server, comptime method: []const u8, params: base_type.ParamsType(method), id: base_type.integer) !void {
-    const res = blk: {
-        self.sendMessage(method, params) catch |err| {
-            const res_err: base_type.ResponseJSONMessage = .{
+pub fn sendMessageToClient(
+    self: *Server,
+    comptime method: []const u8,
+    params: ParamTypes(method),
+    id: base_type.integer,
+) !void {
+    const res: ResponseMessage = blk: {
+        const rs = self.sendMessage(method, params) catch |err| {
+            break :blk .{
                 .id = id,
                 .@"error" = .{
                     .code = switch (err) {
@@ -117,9 +128,10 @@ pub fn sendMessageToClient(self: *Server, comptime method: []const u8, params: b
                     .data = null,
                 },
             };
-            break :blk res_err;
         };
+        break :blk .withRawResult(method, id, rs);
     };
+
     try self.transport.?.writeMessage(res);
 }
 
