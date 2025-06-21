@@ -1,11 +1,16 @@
+/// https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/
 const std = @import("std");
 const json = std.json;
 
-const integer = isize;
-const any = json.Value;
+pub const integer = isize;
+pub const any = json.Value;
 
-/// https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/
-pub const RequestMessage = struct {
+pub const LSPErrCode = enum(i32) {
+    ServerNotInitialized = -32002,
+    InvalidRequest = -32600,
+};
+
+pub const RequestJSONMessage = struct {
     const Self = @This();
     jsonrpc: []const u8 = "2.0",
     id: integer,
@@ -13,19 +18,20 @@ pub const RequestMessage = struct {
     params: ?any = null,
 };
 
-pub const ResponseMessage = struct {
+pub const ResponseJSONMessage = struct {
     const Self = @This();
     id: integer,
-    result: ?any,
-    @"error": ?ResponseError,
+    result: ?any = null,
+    @"error": ?ResponseError = null,
 
-    const ResponseError = struct {
+    pub const ResponseError = struct {
         code: integer,
         message: []const u8,
-        data: ?any,
+        data: ?any = null,
     };
 };
 
+pub const InitializeParams = struct {};
 pub const InitializeResult = struct {
     capabilities: ServerCapabilities,
     serverInfo: ServerInfo,

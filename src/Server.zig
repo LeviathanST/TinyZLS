@@ -1,51 +1,145 @@
+//! Notification will be treated as request,
+//! but return `avoid` when processing
 const std = @import("std");
 
-const base_type = @import("base_type.zig");
+const lsp = @import("lsp");
+const base_type = lsp.base_type;
 const Transport = @import("Transport.zig");
 const ReadError = Transport.ReadError;
 
 const Server = @This();
 
-transport: Transport,
+const RequestMessage = lsp.RequestMessage;
+const ResponseMessage = lsp.ResponseMessage;
+const ParamTypes = lsp.ParamTypes;
+const ResultTypes = lsp.ResultTypes;
+const RequestParams = lsp.RequestParams;
+const Result = lsp.Result;
 
-pub fn onInitialize(self: Server) !void {
+transport: ?Transport = null,
+status: Status = .uninitialized,
+allocator: std.mem.Allocator,
+_arena: *std.heap.ArenaAllocator,
+
+pub const Status = enum {
+    uninitialized,
+    initializing,
+    initialized,
+    shutdown,
+};
+
+/// We not assign `transport` here for testing,
+/// please use `.setTransport()`.
+pub fn init(allocator: std.mem.Allocator) !Server {
+    const arena = try allocator.create(std.heap.ArenaAllocator);
+    arena.* = std.heap.ArenaAllocator.init(allocator);
+    return .{
+        .allocator = arena.allocator(),
+        ._arena = arena,
+    };
+}
+pub fn setTransport(self: *Server, transport: Transport) void {
+    self.*.transport = transport;
+}
+pub fn deinit(self: *Server) void {
+    const alloc = self._arena.child_allocator;
+    self._arena.deinit();
+    alloc.destroy(self._arena);
+    if (self.transport) |transport| {
+        @constCast(&transport).deinit();
+    }
+}
+
+pub fn onInitialize(self: *Server, params: base_type.InitializeParams) !base_type.InitializeResult {
+    // TODO:
+    _ = params;
+    errdefer self.*.status = .uninitialized;
+    std.log.debug("The server is initializing.", .{});
+
+    if (self.status == .initialized) {
+        std.log.warn("The server has been initialized!", .{});
+    }
+
+    self.*.status = .initializing;
     const result: base_type.InitializeResult = .{
         .capabilities = .{ .hoverProvider = true },
         .serverInfo = .default(),
     };
-    try self.transport.sendMessage(result);
+    return result;
 }
 
-pub fn loop(self: Server) !void {
-    const message = self.transport.readMessage() catch |err| {
-        std.log.err("Error reading message: {}\n", .{err});
-        return err;
-    };
-    std.log.debug("[Server] received from client: {s}", .{message});
-    if (message.len == 0) {
-        std.log.err("Message is empty with content-length = 0!", .{});
-        return ReadError.MessageEmpty;
+/// Main loop
+pub fn loop(self: *Server) !void {
+    while (true) {
+        const message = self.transport.?.readMessage() catch |err| {
+            std.log.err("Error reading message: {}\n", .{err});
+            return err;
+        };
+        std.log.debug("[Server] received from client: \n{s}", .{message});
+        if (message.len == 0) {
+            std.log.err("Message is empty with content-length = 0!", .{});
+            return ReadError.MessageEmpty;
+        }
+        try self.processRequest(message);
     }
-    try self.processRequest(message);
-    self.transport.arena.deinit(); // Reset memory after reading once
 }
 
-pub fn deinit(self: *Server) void {
-    self.transport.deinit();
-}
-
-pub fn parseRequest(self: Server, message: []const u8) !base_type.RequestMessage {
-    const value = try std.json.parseFromSliceLeaky(
-        base_type.RequestMessage,
-        self.transport.arena.allocator(),
+pub fn parseRequest(self: Server, message: []const u8) !std.json.Parsed(base_type.RequestJSONMessage) {
+    const value = try std.json.parseFromSlice(
+        base_type.RequestJSONMessage,
+        self.allocator,
         message,
         .{},
     );
     return value;
 }
 
-pub fn processRequest(self: Server, message: []const u8) !void {
-    const req = try self.parseRequest(message);
-    if (!std.mem.eql(u8, req.method, "initialize")) return error.InvalidRequest;
-    try self.onInitialize();
+/// Assert in this function ensure `method` existed.
+pub fn sendMessage(
+    self: *Server,
+    comptime method: []const u8,
+    params: ParamTypes(method),
+) !ResultTypes(method) {
+    std.debug.assert(@hasField(RequestParams, method));
+
+    const res = switch (@field(RequestParams, method)) {
+        .initialize => try self.onInitialize(params),
+        .other => .{},
+    };
+    return res;
+}
+
+pub fn sendMessageToClient(
+    self: *Server,
+    comptime method: []const u8,
+    params: ParamTypes(method),
+    id: base_type.integer,
+) !void {
+    const res: ResponseMessage = blk: {
+        const rs = self.sendMessage(method, params) catch |err| {
+            break :blk .{
+                .id = id,
+                .@"error" = .{
+                    .code = switch (err) {
+                        error.InvalidRequest => @intFromEnum(base_type.LSPErrCode.InvalidRequest),
+                        else => unreachable,
+                    },
+                    .message = @errorName(err),
+                    .data = null,
+                },
+            };
+        };
+        break :blk .withRawResult(method, id, rs);
+    };
+
+    try self.transport.?.writeMessage(res);
+}
+
+pub fn processRequest(self: *Server, message: []const u8) !void {
+    const rm = try RequestMessage.parseFromSlice(self.allocator, message);
+
+    switch (rm.params) {
+        .other => std.log.err("Catch unknown req", .{}),
+        inline else => |params, method| try self.sendMessageToClient(@tagName(method), params, rm.id),
+    }
 }
