@@ -1,6 +1,5 @@
 //! Transport via stdio
 const std = @import("std");
-const base_type = @import("lsp").base_type;
 
 const Transport = @This();
 
