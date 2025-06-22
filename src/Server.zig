@@ -132,7 +132,7 @@ pub fn processMessage(self: *Server, message: []const u8) !void {
     const value = msg.value;
     switch (value) {
         .request => |req| switch (req.params.?) {
-            inline else => |union_value, union_name| try self.processRequest(@tagName(union_name), union_value, req.id),
+            inline else => |union_value, tag| try self.processRequest(@tagName(tag), union_value, req.id),
         },
         .response => std.log.debug("Client send a response", .{}),
     }
