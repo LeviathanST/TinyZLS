@@ -8,6 +8,7 @@ pub const any = json.Value;
 pub const LSPErrCode = enum(i32) {
     ServerNotInitialized = -32002,
     InvalidRequest = -32600,
+    MethodNotFound = -32601,
 };
 
 pub const RequestJSONMessage = struct {
