@@ -29,11 +29,27 @@ pub const RequestParams = union(enum) {
         return @FieldType(RequestParams, method);
     }
 
-    pub fn jsonParse(alloc: std.mem.Allocator, source: anytype, opts: std.json.ParseOptions) !RequestParams {
-        _ = alloc;
-        _ = opts;
-        try source.skipValue();
-        return .{ .initialize = .{} };
+    pub fn parse(
+        alloc: std.mem.Allocator,
+        source: anytype,
+        runtime_method: []const u8,
+        opts: std.json.ParseOptions,
+    ) !?RequestParams {
+        inline for (std.meta.fields(RequestParams)) |f| {
+            if (std.mem.eql(u8, f.name, runtime_method)) {
+                return @unionInit(
+                    RequestParams,
+                    f.name,
+                    try innerParse(
+                        RequestParams.typeFromMethod(f.name),
+                        alloc,
+                        source,
+                        opts,
+                    ),
+                );
+            }
+        }
+        return null;
     }
 };
 
@@ -71,6 +87,32 @@ pub const MessageFields = struct {
     params: ?RequestParams = null,
     result: ?Result = null,
     @"error": ?Message.Response.ErrorResponse = null,
+
+    pub fn jsonParseField(
+        self: *MessageFields,
+        alloc: std.mem.Allocator,
+        source: anytype,
+        opts: std.json.ParseOptions,
+        comptime field_name: []const u8,
+    ) !void {
+        if (std.mem.eql(u8, field_name, "params")) {
+            const value = try RequestParams.parse(
+                alloc,
+                source,
+                self.method.?,
+                opts,
+            );
+            @field(self, "params") = value;
+        } else {
+            const value = try innerParse(
+                @FieldType(MessageFields, field_name),
+                alloc,
+                source,
+                opts,
+            );
+            @field(self, field_name) = value;
+        }
+    }
 
     pub fn toMessage(self: MessageFields) Message {
         if (self.method) |method| {
@@ -149,14 +191,12 @@ pub const Message = union(enum) {
             };
 
             switch (field_name) {
-                inline else => |comptime_field| {
-                    @field(mf, @tagName(comptime_field)) = try innerParse(
-                        @FieldType(MessageFields, @tagName(comptime_field)),
-                        alloc,
-                        source,
-                        opts,
-                    );
-                },
+                inline else => |comptime_field| try mf.jsonParseField(
+                    alloc,
+                    source,
+                    opts,
+                    @tagName(comptime_field),
+                ),
             }
         }
         return mf.toMessage();
