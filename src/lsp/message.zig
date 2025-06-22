@@ -5,11 +5,12 @@
 //!   - Response
 //!   - TODO: Notification
 //!
-//! * Result:
+//! * Response result:
 //!   - Get `type` from method name.
-//!   - Parse from json string to tagged union.
+//!   - Json string from tagged union.
 //! * Request parameters:
 //!   - Get `type` from method name.
+//!   - Parse from json string to tagged union.
 const std = @import("std");
 const base_type = @import("base_type.zig");
 
