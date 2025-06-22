@@ -78,12 +78,12 @@ pub fn loop(self: *Server) !void {
             std.log.err("Message is empty with content-length = 0!", .{});
             return ReadError.MessageEmpty;
         }
-        try self.processRequest(message);
+        try self.processMessage(message);
     }
 }
 
 /// Assert in this function ensure `method` existed.
-pub fn sendMessage(
+pub fn handleRequest(
     self: *Server,
     comptime method: []const u8,
     params: RequestParams.typeFromMethod(method),
@@ -96,14 +96,15 @@ pub fn sendMessage(
     return res;
 }
 
-pub fn sendMessageToClient(
+/// Handle request then send message.
+pub fn processRequest(
     self: *Server,
     comptime method: []const u8,
     params: RequestParams.typeFromMethod(method),
     id: base_type.integer,
 ) !void {
     const res: Response = blk: {
-        const rs = self.sendMessage(method, params) catch |err| {
+        const rs = self.handleRequest(method, params) catch |err| {
             break :blk .{
                 .id = id,
                 .@"error" = .{
@@ -124,14 +125,14 @@ pub fn sendMessageToClient(
     try self.transport.?.writeMessage(res);
 }
 
-pub fn processRequest(self: *Server, message: []const u8) !void {
+pub fn processMessage(self: *Server, message: []const u8) !void {
     const msg = try std.json.parseFromSlice(Message, self.allocator, message, .{});
     defer msg.deinit();
 
     const value = msg.value;
     switch (value) {
         .request => |req| switch (req.params.?) {
-            inline else => |union_value, union_name| try self.sendMessageToClient(@tagName(union_name), union_value, req.id),
+            inline else => |union_value, union_name| try self.processRequest(@tagName(union_name), union_value, req.id),
         },
         .response => std.log.debug("Client send a response", .{}),
     }
