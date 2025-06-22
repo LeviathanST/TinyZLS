@@ -9,10 +9,8 @@ const ReadError = Transport.ReadError;
 
 const Server = @This();
 
-const RequestMessage = lsp.RequestMessage;
-const ResponseMessage = lsp.ResponseMessage;
-const ParamTypes = lsp.ParamTypes;
-const ResultTypes = lsp.ResultTypes;
+const Response = lsp.ResponseMessage;
+const Message = lsp.Message;
 const RequestParams = lsp.RequestParams;
 const Result = lsp.Result;
 
@@ -84,27 +82,16 @@ pub fn loop(self: *Server) !void {
     }
 }
 
-pub fn parseRequest(self: Server, message: []const u8) !std.json.Parsed(base_type.RequestJSONMessage) {
-    const value = try std.json.parseFromSlice(
-        base_type.RequestJSONMessage,
-        self.allocator,
-        message,
-        .{},
-    );
-    return value;
-}
-
 /// Assert in this function ensure `method` existed.
 pub fn sendMessage(
     self: *Server,
     comptime method: []const u8,
-    params: ParamTypes(method),
-) !ResultTypes(method) {
+    params: RequestParams.typeFromMethod(method),
+) !Result.typeFromMethod(method) {
     std.debug.assert(@hasField(RequestParams, method));
 
     const res = switch (@field(RequestParams, method)) {
         .initialize => try self.onInitialize(params),
-        .other => .{},
     };
     return res;
 }
@@ -112,10 +99,10 @@ pub fn sendMessage(
 pub fn sendMessageToClient(
     self: *Server,
     comptime method: []const u8,
-    params: ParamTypes(method),
+    params: RequestParams.typeFromMethod(method),
     id: base_type.integer,
 ) !void {
-    const res: ResponseMessage = blk: {
+    const res: Response = blk: {
         const rs = self.sendMessage(method, params) catch |err| {
             break :blk .{
                 .id = id,
@@ -136,10 +123,14 @@ pub fn sendMessageToClient(
 }
 
 pub fn processRequest(self: *Server, message: []const u8) !void {
-    const rm = try RequestMessage.parseFromSlice(self.allocator, message);
+    const msg = try std.json.parseFromSlice(Message, self.allocator, message, .{});
+    defer msg.deinit();
 
-    switch (rm.params) {
-        .other => std.log.err("Catch unknown req", .{}),
-        inline else => |params, method| try self.sendMessageToClient(@tagName(method), params, rm.id),
+    const value = msg.value;
+    switch (value) {
+        .request => |req| switch (req.params.?) {
+            inline else => |union_value, union_name| try self.sendMessageToClient(@tagName(union_name), union_value, req.id),
+        },
+        .response => std.log.debug("Client send a response", .{}),
     }
 }
