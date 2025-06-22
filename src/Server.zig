@@ -108,7 +108,9 @@ pub fn sendMessageToClient(
                 .id = id,
                 .@"error" = .{
                     .code = switch (err) {
+                        error.InvalidRequest => @intFromEnum(base_type.LSPErrCode.ServerNotInitialized),
                         error.InvalidRequest => @intFromEnum(base_type.LSPErrCode.InvalidRequest),
+                        error.InvalidRequest => @intFromEnum(base_type.LSPErrCode.MethodNotFound),
                         else => unreachable,
                     },
                     .message = @errorName(err),
