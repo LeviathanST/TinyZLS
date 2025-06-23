@@ -1,1 +1,3 @@
-comptime {}
+comptime {
+    _ = @import("lsp/request.zig");
+}
