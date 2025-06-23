@@ -11,27 +11,6 @@ pub const LSPErrCode = enum(i32) {
     MethodNotFound = -32601,
 };
 
-pub const RequestJSONMessage = struct {
-    const Self = @This();
-    jsonrpc: []const u8 = "2.0",
-    id: integer,
-    method: []const u8,
-    params: ?any = null,
-};
-
-pub const ResponseJSONMessage = struct {
-    const Self = @This();
-    id: integer,
-    result: ?any = null,
-    @"error": ?ResponseError = null,
-
-    pub const ResponseError = struct {
-        code: integer,
-        message: []const u8,
-        data: ?any = null,
-    };
-};
-
 pub const InitializeParams = struct {};
 pub const InitializeResult = struct {
     capabilities: ServerCapabilities,

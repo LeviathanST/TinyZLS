@@ -30,6 +30,11 @@ pub const RequestParams = union(enum) {
         return @FieldType(RequestParams, method);
     }
 
+    pub fn jsonStringify(self: RequestParams, stream: anytype) !void {
+        const active_tag = std.meta.activeTag(self);
+        try stream.write(@field(self, @tagName(active_tag)));
+    }
+
     pub fn parse(
         alloc: std.mem.Allocator,
         source: anytype,
@@ -60,17 +65,35 @@ pub const Result = union(enum) {
     initialize: base_type.InitializeResult,
 
     pub fn jsonStringify(self: Result, stream: anytype) !void {
-        const active = std.meta.activeTag(self);
+        const active_tag = std.meta.activeTag(self);
         inline for (std.meta.fields(Result)) |f| {
-            if (f.type != void and std.mem.eql(u8, @tagName(active), f.name)) {
+            if (std.mem.eql(u8, @tagName(active_tag), f.name)) {
                 try stream.write(@field(self, f.name));
-            } else if (f.type == void and std.mem.eql(u8, @tagName(active), f.name)) {
-                try stream.objectField("result");
-                try stream.beginObject();
-                try stream.endObject();
-                return;
             }
         }
+    }
+
+    pub fn parse(
+        alloc: std.mem.Allocator,
+        source: anytype,
+        runtime_method: []const u8,
+        opts: std.json.ParseOptions,
+    ) !?Result {
+        inline for (std.meta.fields(Result)) |f| {
+            if (std.mem.eql(u8, f.name, runtime_method)) {
+                return @unionInit(
+                    Result,
+                    f.name,
+                    try innerParse(
+                        Result.typeFromMethod(f.name),
+                        alloc,
+                        source,
+                        opts,
+                    ),
+                );
+            }
+        }
+        return null;
     }
 
     pub fn typeFromMethod(comptime method: []const u8) type {
@@ -78,8 +101,6 @@ pub const Result = union(enum) {
         return @FieldType(Result, method);
     }
 };
-/// Just a empty struct to avoid `avoid` type
-const OtherMethod = struct {};
 
 pub const MessageFields = struct {
     jsonrpc: []const u8,
@@ -96,23 +117,14 @@ pub const MessageFields = struct {
         opts: std.json.ParseOptions,
         comptime field_name: []const u8,
     ) !void {
-        if (std.mem.eql(u8, field_name, "params")) {
-            const value = try RequestParams.parse(
-                alloc,
-                source,
-                self.method.?,
-                opts,
-            );
-            @field(self, "params") = value;
-        } else {
-            const value = try innerParse(
-                @FieldType(MessageFields, field_name),
-                alloc,
-                source,
-                opts,
-            );
-            @field(self, field_name) = value;
-        }
+        const E = std.meta.FieldEnum(MessageFields);
+        const key = @field(E, field_name);
+        const value = switch (key) {
+            .params => try RequestParams.parse(alloc, source, self.method.?, opts),
+            .result => try Result.parse(alloc, source, self.method.?, opts),
+            else => try innerParse(@FieldType(MessageFields, field_name), alloc, source, opts),
+        };
+        @field(self, field_name) = value;
     }
 
     pub fn toMessage(self: MessageFields) Message {
@@ -138,7 +150,6 @@ pub const MessageFields = struct {
     }
 };
 
-// TODO: finish message
 pub const Message = union(enum) {
     response: Response,
     request: Request,
@@ -146,22 +157,20 @@ pub const Message = union(enum) {
     pub const Response = struct {
         jsonrpc: []const u8,
         id: integer,
-        result: ?Result,
-        @"error": ErrorResponse,
+        result: ?Result = null,
+        @"error": ?ErrorResponse = null,
 
         pub const ErrorResponse = struct {
             code: integer,
             message: []const u8,
             data: ?any = null,
         };
-
-        // TODO: pub fn jsonStringify(self: Response, stream: anytype) !void {}
     };
     pub const Request = struct {
         jsonrpc: []const u8,
         id: integer,
         method: []const u8,
-        params: ?RequestParams,
+        params: ?RequestParams = null,
     };
 
     pub fn jsonParse(alloc: std.mem.Allocator, source: anytype, opts: std.json.ParseOptions) !Message {

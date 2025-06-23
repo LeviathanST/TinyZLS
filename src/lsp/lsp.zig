@@ -5,7 +5,6 @@ pub const base_type = @import("base_type.zig");
 
 const message = @import("message.zig");
 
-pub const ResponseMessage = message.ResponseMessage;
 pub const Message = message.Message;
 pub const RequestParams = message.RequestParams;
 pub const Result = message.Result;
