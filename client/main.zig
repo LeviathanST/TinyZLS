@@ -16,15 +16,6 @@ pub fn main() !void {
     const args = try std.process.argsAlloc(alloc);
     defer std.process.argsFree(alloc, args);
 
-    const req: lsp.Message.Request = .{
-        .jsonrpc = "2.0",
-        .id = 1,
-        .method = "initialize",
-        .params = .{
-            .initialize = .{},
-        },
-    };
-
     var child: std.process.Child = .init(&.{args[1]}, alloc);
     child.stdin_behavior = .Pipe;
     child.stdout_behavior = .Pipe;
@@ -39,6 +30,16 @@ pub fn main() !void {
         },
     );
     defer transport.deinit();
+
+    const req: lsp.Message.Request = .{
+        .jsonrpc = "2.0",
+        .id = 1,
+        .method = "initialize",
+        .params = .{
+            .initialize = .{},
+        },
+    };
+
     try transport.writeMessage(req);
     const res = try transport.readMessage();
     std.log.debug("[Client] received from server: \n{s}", .{res});
