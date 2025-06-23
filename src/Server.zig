@@ -9,7 +9,6 @@ const ReadError = Transport.ReadError;
 
 const Server = @This();
 
-const Response = lsp.ResponseMessage;
 const Message = lsp.Message;
 const RequestParams = lsp.RequestParams;
 const Result = lsp.Result;
@@ -103,7 +102,7 @@ pub fn processRequest(
     params: RequestParams.typeFromMethod(method),
     id: base_type.integer,
 ) !void {
-    const res: Response = blk: {
+    const res: Message.Response = blk: {
         const rs = self.handleRequest(method, params) catch |err| {
             break :blk .{
                 .id = id,
@@ -119,7 +118,12 @@ pub fn processRequest(
                 },
             };
         };
-        break :blk .withRawResult(method, id, rs);
+        break :blk .{
+            .jsonrpc = "2.0",
+            .id = id,
+            .result = @unionInit(Result, method, rs),
+            .@"error" = null,
+        };
     };
 
     try self.transport.?.writeMessage(res);
