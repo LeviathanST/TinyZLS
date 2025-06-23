@@ -66,11 +66,7 @@ pub const Result = union(enum) {
 
     pub fn jsonStringify(self: Result, stream: anytype) !void {
         const active_tag = std.meta.activeTag(self);
-        inline for (std.meta.fields(Result)) |f| {
-            if (std.mem.eql(u8, @tagName(active_tag), f.name)) {
-                try stream.write(@field(self, f.name));
-            }
-        }
+        try stream.write(@field(self, @tagName(active_tag)));
     }
 
     pub fn parse(
