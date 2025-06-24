@@ -44,9 +44,14 @@ pub fn main() !void {
     const res = try transport.readMessage();
     std.log.debug("[Client] received from server: \n{s}", .{res});
 
-    try transport.writeMessage(req);
-    const res1 = try transport.readMessage();
-    std.log.debug("[Client] received from server: \n{s}", .{res1});
+    const noti: lsp.Message.Notification = .{
+        .jsonrpc = "2.0",
+        .method = "initialized",
+        .params = .{
+            .initialized = .{},
+        },
+    };
 
+    try transport.writeMessage(noti);
     _ = try child.kill();
 }
