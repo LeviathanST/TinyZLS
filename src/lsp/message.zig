@@ -108,30 +108,6 @@ pub const Result = union(enum) {
         const active_tag = std.meta.activeTag(self);
         try stream.write(@field(self, @tagName(active_tag)));
     }
-
-    pub fn parse(
-        alloc: std.mem.Allocator,
-        source: anytype,
-        runtime_method: []const u8,
-        opts: std.json.ParseOptions,
-    ) !?Result {
-        inline for (std.meta.fields(Result)) |f| {
-            if (std.mem.eql(u8, f.name, runtime_method)) {
-                return @unionInit(
-                    Result,
-                    f.name,
-                    try innerParse(
-                        Result.typeFromMethod(f.name),
-                        alloc,
-                        source,
-                        opts,
-                    ),
-                );
-            }
-        }
-        return null;
-    }
-
     pub fn typeFromMethod(comptime method: []const u8) type {
         if (!@hasField(Result, method)) return void;
         return @FieldType(Result, method);
@@ -158,9 +134,9 @@ pub const MessageFields = struct {
     ) !void {
         const E = std.meta.FieldEnum(MessageFields);
         const key = @field(E, field_name);
+        if (key == .result) return; // ignore to parse response
         const value = switch (key) {
             .params => try innerParse(any, alloc, source, opts),
-            .result => try Result.parse(alloc, source, self.method.?, opts),
             inline else => try innerParse(@FieldType(MessageFields, field_name), alloc, source, opts),
         };
         @field(self, field_name) = value;
