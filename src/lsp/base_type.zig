@@ -1,4 +1,4 @@
-/// https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/
+//! https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/
 const std = @import("std");
 const json = std.json;
 

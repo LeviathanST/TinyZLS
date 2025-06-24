@@ -25,6 +25,7 @@ const any = base_type.any;
 /// definition in LSP specifiication
 pub const NotificationParams = union(enum) {
     initialized: base_type.InitializedParams,
+    exit,
 
     pub fn typeFromMethod(comptime method: []const u8) type {
         if (!@hasField(NotificationParams, method)) return void;
@@ -33,7 +34,15 @@ pub const NotificationParams = union(enum) {
 
     pub fn jsonStringify(self: NotificationParams, stream: anytype) !void {
         const active_tag = std.meta.activeTag(self);
-        try stream.write(@field(self, @tagName(active_tag)));
+        inline for (std.meta.fields(NotificationParams)) |f| {
+            if (std.mem.eql(u8, f.name, @tagName(active_tag))) {
+                if (f.type == void) {
+                    try stream.write(null);
+                    return;
+                }
+                try stream.write(@field(self, f.name));
+            }
+        }
     }
 
     pub fn parse(
@@ -44,6 +53,9 @@ pub const NotificationParams = union(enum) {
     ) !?NotificationParams {
         inline for (std.meta.fields(NotificationParams)) |f| {
             if (std.mem.eql(u8, f.name, runtime_method)) {
+                if (f.type == void) {
+                    return @unionInit(NotificationParams, f.name, {});
+                }
                 return @unionInit(
                     NotificationParams,
                     f.name,
@@ -64,6 +76,7 @@ pub const NotificationParams = union(enum) {
 /// definition in LSP specifiication
 pub const RequestParams = union(enum) {
     initialize: base_type.InitializeParams,
+    shutdown,
 
     pub fn typeFromMethod(comptime method: []const u8) type {
         if (!@hasField(RequestParams, method)) return void;
@@ -72,7 +85,15 @@ pub const RequestParams = union(enum) {
 
     pub fn jsonStringify(self: RequestParams, stream: anytype) !void {
         const active_tag = std.meta.activeTag(self);
-        try stream.write(@field(self, @tagName(active_tag)));
+        inline for (std.meta.fields(RequestParams)) |f| {
+            if (std.mem.eql(u8, f.name, @tagName(active_tag))) {
+                if (f.type == void) {
+                    try stream.write(null);
+                    return;
+                }
+                try stream.write(@field(self, f.name));
+            }
+        }
     }
 
     pub fn parse(
@@ -83,6 +104,9 @@ pub const RequestParams = union(enum) {
     ) !?RequestParams {
         inline for (std.meta.fields(RequestParams)) |f| {
             if (std.mem.eql(u8, f.name, runtime_method)) {
+                if (f.type == void) {
+                    return @unionInit(RequestParams, f.name, {});
+                }
                 return @unionInit(
                     RequestParams,
                     f.name,
@@ -103,10 +127,19 @@ pub const RequestParams = union(enum) {
 /// definitions in LSP specifiication
 pub const Result = union(enum) {
     initialize: base_type.InitializeResult,
+    shutdown,
 
     pub fn jsonStringify(self: Result, stream: anytype) !void {
         const active_tag = std.meta.activeTag(self);
-        try stream.write(@field(self, @tagName(active_tag)));
+        inline for (std.meta.fields(Result)) |f| {
+            if (std.mem.eql(u8, f.name, @tagName(active_tag))) {
+                if (f.type == void) {
+                    try stream.write(null);
+                    return;
+                }
+                try stream.write(@field(self, f.name));
+            }
+        }
     }
     pub fn typeFromMethod(comptime method: []const u8) type {
         if (!@hasField(Result, method)) return void;

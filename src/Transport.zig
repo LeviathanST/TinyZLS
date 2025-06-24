@@ -79,10 +79,17 @@ pub fn readMessage(self: Transport) ![]u8 {
 pub fn writeMessage(self: Transport, res_or_req: anytype) !void {
     const writer = self.opts.writer;
     const alloc = self.allocator;
+
     const json = try std.json.stringifyAlloc(
         alloc,
         res_or_req,
-        .{ .emit_null_optional_fields = true, .whitespace = .indent_2 },
+        .{
+            .emit_null_optional_fields = true,
+            .whitespace = switch (@import("builtin").mode) {
+                .Debug => .indent_2,
+                else => .minified,
+            },
+        },
     );
     defer alloc.free(json);
 
