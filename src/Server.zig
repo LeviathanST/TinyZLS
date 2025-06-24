@@ -19,11 +19,14 @@ status: Status = .uninitialized,
 allocator: std.mem.Allocator,
 _arena: *std.heap.ArenaAllocator,
 
+const Error = error{ ServerNotInitialized, InvalidRequest };
+
 pub const Status = enum {
     uninitialized,
     initializing,
     initialized,
     shutdown,
+    exit,
 };
 
 /// We not assign `transport` here for testing,
@@ -57,6 +60,10 @@ pub fn onInitialize(self: *Server, params: base_type.InitializeParams) !base_typ
     if (self.status == .initialized) {
         std.log.warn("The server has been initialized!", .{});
     }
+    if (self.status == .shutdown) {
+        std.log.warn("The server has been shutdown!", .{});
+        return Error.InvalidRequest;
+    }
 
     self.*.status = .initializing;
     const result: base_type.InitializeResult = .{
@@ -66,16 +73,34 @@ pub fn onInitialize(self: *Server, params: base_type.InitializeParams) !base_typ
     return result;
 }
 pub fn onInitialized(self: *Server, _: base_type.InitializedParams) !void {
+    if (self.status == .shutdown) {
+        std.log.err("The server is shutdown!", .{});
+        return Error.InvalidRequest;
+    }
     if (self.status != .initializing) {
         std.log.err("The server receives a initialized notification but not receives a initialize request before!", .{});
-        return error.InvalidRequest;
+        return Error.InvalidRequest;
     }
 
     if (self.status == .initialized) {
         std.log.err("The server is already initialized", .{});
-        return error.InvalidHeader;
+        return Error.InvalidRequest;
     }
     self.*.status = .initialized;
+}
+pub fn onShutdown(self: *Server) !void {
+    if (self.status != .initialized) {
+        std.log.err("The server is not initialized!", .{});
+        return Error.ServerNotInitialized;
+    }
+    self.status = .shutdown;
+}
+pub fn onExit(self: *Server) !void {
+    if (self.status != .shutdown) {
+        std.log.err("The server receives an exit notification but not receives a shutdown request before!", .{});
+        return Error.ServerNotInitialized;
+    }
+    self.status = .exit;
 }
 
 /// Main loop
@@ -104,6 +129,7 @@ pub fn handleRequest(
 
     const res = switch (@field(RequestParams, method)) {
         .initialize => try self.onInitialize(params),
+        .shutdown => try self.onShutdown(),
     };
     return res;
 }
@@ -118,13 +144,12 @@ pub fn processRequest(
     const res: Message.Response = blk: {
         const rs = self.handleRequest(method, params) catch |err| {
             break :blk .{
+                .jsonrpc = "2.0",
                 .id = id,
                 .@"error" = .{
                     .code = switch (err) {
-                        error.InvalidRequest => @intFromEnum(base_type.LSPErrCode.ServerNotInitialized),
                         error.InvalidRequest => @intFromEnum(base_type.LSPErrCode.InvalidRequest),
-                        error.InvalidRequest => @intFromEnum(base_type.LSPErrCode.MethodNotFound),
-                        else => unreachable,
+                        error.ServerNotInitialized => @intFromEnum(base_type.LSPErrCode.ServerNotInitialized),
                     },
                     .message = @errorName(err),
                     .data = null,
@@ -142,6 +167,7 @@ pub fn processRequest(
     try self.transport.?.writeMessage(res);
 }
 
+/// Handle notification then send nothing.
 pub fn processNotification(
     self: *Server,
     comptime method: []const u8,
@@ -149,6 +175,7 @@ pub fn processNotification(
 ) !void {
     switch (@field(NotificationParams, method)) {
         .initialized => try self.onInitialized(params),
+        .exit => try self.onExit(),
     }
 }
 
