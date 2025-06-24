@@ -11,6 +11,7 @@ const Server = @This();
 
 const Message = lsp.Message;
 const RequestParams = lsp.RequestParams;
+const NotificationParams = lsp.NotificationParams;
 const Result = lsp.Result;
 
 transport: ?Transport = null,
@@ -63,6 +64,18 @@ pub fn onInitialize(self: *Server, params: base_type.InitializeParams) !base_typ
         .serverInfo = .default(),
     };
     return result;
+}
+pub fn onInitialized(self: *Server, _: base_type.InitializedParams) !void {
+    if (self.status != .initializing) {
+        std.log.err("The server receives a initialized notification but not receives a initialize request before!", .{});
+        return error.InvalidRequest;
+    }
+
+    if (self.status == .initialized) {
+        std.log.err("The server is already initialized", .{});
+        return error.InvalidHeader;
+    }
+    self.*.status = .initialized;
 }
 
 /// Main loop
@@ -129,12 +142,25 @@ pub fn processRequest(
     try self.transport.?.writeMessage(res);
 }
 
+pub fn processNotification(
+    self: *Server,
+    comptime method: []const u8,
+    params: NotificationParams.typeFromMethod(method),
+) !void {
+    switch (@field(NotificationParams, method)) {
+        .initialized => try self.onInitialized(params),
+    }
+}
+
 pub fn processMessage(self: *Server, message: []const u8) !void {
     const msg = try std.json.parseFromSlice(Message, self.allocator, message, .{});
     defer msg.deinit();
 
     const value = msg.value;
     switch (value) {
+        .notification => |noti| switch (noti.params.?) {
+            inline else => |union_value, tag| try self.processNotification(@tagName(tag), union_value),
+        },
         .request => |req| switch (req.params.?) {
             inline else => |union_value, tag| try self.processRequest(@tagName(tag), union_value, req.id),
         },
