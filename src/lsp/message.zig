@@ -3,7 +3,7 @@
 //! * Message:
 //!   - Request
 //!   - Response
-//!   - TODO: Notification
+//!   - Notification
 //!
 //! * Response result:
 //!   - Get `type` from method name.
@@ -15,10 +15,50 @@ const std = @import("std");
 const base_type = @import("base_type.zig");
 
 const innerParse = std.json.innerParse;
+const innerParseFromValue = std.json.innerParseFromValue;
 const Token = std.json.Token;
 
 const integer = base_type.integer;
 const any = base_type.any;
+
+/// A tagged union contains all notification parameters
+/// definition in LSP specifiication
+pub const NotificationParams = union(enum) {
+    initialized: base_type.InitializedParams,
+
+    pub fn typeFromMethod(comptime method: []const u8) type {
+        if (!@hasField(NotificationParams, method)) return void;
+        return @FieldType(NotificationParams, method);
+    }
+
+    pub fn jsonStringify(self: NotificationParams, stream: anytype) !void {
+        const active_tag = std.meta.activeTag(self);
+        try stream.write(@field(self, @tagName(active_tag)));
+    }
+
+    pub fn parse(
+        alloc: std.mem.Allocator,
+        source: any,
+        runtime_method: []const u8,
+        opts: std.json.ParseOptions,
+    ) !?NotificationParams {
+        inline for (std.meta.fields(NotificationParams)) |f| {
+            if (std.mem.eql(u8, f.name, runtime_method)) {
+                return @unionInit(
+                    NotificationParams,
+                    f.name,
+                    try innerParseFromValue(
+                        NotificationParams.typeFromMethod(f.name),
+                        alloc,
+                        source,
+                        opts,
+                    ),
+                );
+            }
+        }
+        return null;
+    }
+};
 
 /// A tagged union contains all request parameters
 /// definition in LSP specifiication
@@ -37,7 +77,7 @@ pub const RequestParams = union(enum) {
 
     pub fn parse(
         alloc: std.mem.Allocator,
-        source: anytype,
+        source: any,
         runtime_method: []const u8,
         opts: std.json.ParseOptions,
     ) !?RequestParams {
@@ -46,7 +86,7 @@ pub const RequestParams = union(enum) {
                 return @unionInit(
                     RequestParams,
                     f.name,
-                    try innerParse(
+                    try innerParseFromValue(
                         RequestParams.typeFromMethod(f.name),
                         alloc,
                         source,
@@ -99,10 +139,13 @@ pub const Result = union(enum) {
 };
 
 pub const MessageFields = struct {
-    jsonrpc: []const u8,
+    jsonrpc: []const u8 = "",
     id: ?integer = null,
     method: ?[]const u8 = null,
-    params: ?RequestParams = null,
+    // NOTE: use std.json.Value here for json dynamic parse,
+    //       then use custom jsonParseFromValue() in NotificationParams
+    //       or RequestParams.
+    params: ?any = null,
     result: ?Result = null,
     @"error": ?Message.Response.ErrorResponse = null,
 
@@ -116,23 +159,47 @@ pub const MessageFields = struct {
         const E = std.meta.FieldEnum(MessageFields);
         const key = @field(E, field_name);
         const value = switch (key) {
-            .params => try RequestParams.parse(alloc, source, self.method.?, opts),
+            .params => try innerParse(any, alloc, source, opts),
             .result => try Result.parse(alloc, source, self.method.?, opts),
-            else => try innerParse(@FieldType(MessageFields, field_name), alloc, source, opts),
+            inline else => try innerParse(@FieldType(MessageFields, field_name), alloc, source, opts),
         };
         @field(self, field_name) = value;
     }
 
-    pub fn toMessage(self: MessageFields) Message {
+    pub fn toMessage(
+        self: MessageFields,
+        alloc: std.mem.Allocator,
+        opts: std.json.ParseOptions,
+    ) !Message {
         if (self.method) |method| {
-            return Message{
-                .request = .{
-                    .jsonrpc = self.jsonrpc,
-                    .id = self.id.?,
-                    .method = method,
-                    .params = self.params.?,
-                },
-            };
+            if (self.id) |id| {
+                return Message{
+                    .request = .{
+                        .jsonrpc = self.jsonrpc,
+                        .id = id,
+                        .method = method,
+                        .params = try RequestParams.parse(
+                            alloc,
+                            self.params.?,
+                            self.method.?,
+                            opts,
+                        ),
+                    },
+                };
+            } else {
+                return Message{
+                    .notification = .{
+                        .jsonrpc = self.jsonrpc,
+                        .method = method,
+                        .params = try NotificationParams.parse(
+                            alloc,
+                            self.params.?,
+                            self.method.?,
+                            opts,
+                        ),
+                    },
+                };
+            }
         } else {
             return Message{
                 .response = .{
@@ -147,6 +214,7 @@ pub const MessageFields = struct {
 };
 
 pub const Message = union(enum) {
+    notification: Notification,
     response: Response,
     request: Request,
 
@@ -168,6 +236,11 @@ pub const Message = union(enum) {
         method: []const u8,
         params: ?RequestParams = null,
     };
+    pub const Notification = struct {
+        jsonrpc: []const u8,
+        method: []const u8,
+        params: ?NotificationParams = null,
+    };
 
     pub fn jsonParse(alloc: std.mem.Allocator, source: anytype, opts: std.json.ParseOptions) !Message {
         if (try source.next() != .object_begin) return error.UnexpectedToken;
@@ -177,8 +250,7 @@ pub const Message = union(enum) {
         var key_map = std.StringHashMap([]const u8).init(arena.allocator());
         defer key_map.deinit();
 
-        // SAFETY: use @field to assign value after parsing needed fields
-        var mf: MessageFields = undefined;
+        var mf: MessageFields = .{};
         const Fields = std.meta.FieldEnum(MessageFields);
 
         while (true) {
@@ -205,29 +277,6 @@ pub const Message = union(enum) {
                 ),
             }
         }
-        return mf.toMessage();
-    }
-};
-pub const ResponseMessage = struct {
-    const Self = @This();
-
-    jsonrpc: []const u8 = "2.0",
-    id: integer,
-    result: ?Result = null,
-    @"error": ?ResponseError = null,
-
-    pub const ResponseError = struct {
-        code: integer,
-        message: []const u8,
-        data: ?any = null,
-    };
-
-    /// Generate response json with tagged union result
-    pub fn withRawResult(comptime method: []const u8, id: integer, result: anytype) ResponseMessage {
-        const u = @unionInit(Result, method, result);
-        return .{
-            .id = id,
-            .result = u,
-        };
+        return try mf.toMessage(alloc, opts);
     }
 };

@@ -11,6 +11,7 @@ pub const LSPErrCode = enum(i32) {
     MethodNotFound = -32601,
 };
 
+pub const InitializedParams = struct {};
 pub const InitializeParams = struct {};
 pub const InitializeResult = struct {
     capabilities: ServerCapabilities,
