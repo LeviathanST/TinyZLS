@@ -51,7 +51,28 @@ pub fn main() !void {
             .initialized = .{},
         },
     };
-
     try transport.writeMessage(noti);
+
+    const req1: lsp.Message.Request = .{
+        .jsonrpc = "2.0",
+        .id = 1,
+        .method = "shutdown",
+        .params = .{
+            .shutdown = {},
+        },
+    };
+
+    try transport.writeMessage(req1);
+    const res1 = try transport.readMessage();
+    std.log.debug("[Client] received from server: \n{s}", .{res1});
+
+    const noti1: lsp.Message.Notification = .{
+        .jsonrpc = "2.0",
+        .method = "exit",
+        .params = .{
+            .exit = {},
+        },
+    };
+    try transport.writeMessage(noti1);
     _ = try child.kill();
 }
