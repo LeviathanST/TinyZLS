@@ -1,7 +1,6 @@
 const std = @import("std");
+const lsp = @import("lsp");
 const tiny_zls = @import("tiny_zls");
-
-const base_type = tiny_zls.base_type;
 
 pub fn main() !void {
     std.log.info("Starting TinyZLS client", .{});
@@ -17,11 +16,6 @@ pub fn main() !void {
     const args = try std.process.argsAlloc(alloc);
     defer std.process.argsFree(alloc, args);
 
-    const req: base_type.RequestMessage = .{
-        .id = 1,
-        .method = "initialize",
-    };
-
     var child: std.process.Child = .init(&.{args[1]}, alloc);
     child.stdin_behavior = .Pipe;
     child.stdout_behavior = .Pipe;
@@ -36,10 +30,28 @@ pub fn main() !void {
         },
     );
     defer transport.deinit();
-    try transport.sendMessage(req);
+
+    const req: lsp.Message.Request = .{
+        .jsonrpc = "2.0",
+        .id = 1,
+        .method = "initialize",
+        .params = .{
+            .initialize = .{},
+        },
+    };
+
+    try transport.writeMessage(req);
     const res = try transport.readMessage();
+    std.log.debug("[Client] received from server: \n{s}", .{res});
 
-    std.log.debug("[Client] received from server: {s}", .{res});
+    const noti: lsp.Message.Notification = .{
+        .jsonrpc = "2.0",
+        .method = "initialized",
+        .params = .{
+            .initialized = .{},
+        },
+    };
 
+    try transport.writeMessage(noti);
     _ = try child.kill();
 }

@@ -1,0 +1,25 @@
+name: CI
+
+on: 
+  push:
+    branches:
+      - master
+  pull_request:
+
+jobs:
+  tests:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: ["ubuntu-24.04", "macos-latest", "windows-latest"]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: mlugg/setup-zig@v2
+        with: 
+          version: master
+      
+      - name: Run all tests
+        run: zig build test --summary all
+
