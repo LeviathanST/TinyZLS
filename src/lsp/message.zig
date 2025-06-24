@@ -72,7 +72,15 @@ pub const RequestParams = union(enum) {
 
     pub fn jsonStringify(self: RequestParams, stream: anytype) !void {
         const active_tag = std.meta.activeTag(self);
-        try stream.write(@field(self, @tagName(active_tag)));
+        inline for (std.meta.fields(RequestParams)) |f| {
+            if (std.mem.eql(u8, f.name, @tagName(active_tag))) {
+                if (f.type == void) {
+                    try stream.write(null);
+                    return;
+                }
+                try stream.write(@field(self, f.name));
+            }
+        }
     }
 
     pub fn parse(
@@ -83,6 +91,9 @@ pub const RequestParams = union(enum) {
     ) !?RequestParams {
         inline for (std.meta.fields(RequestParams)) |f| {
             if (std.mem.eql(u8, f.name, runtime_method)) {
+                if (f.type == void) {
+                    return @unionInit(RequestParams, f.name, {});
+                }
                 return @unionInit(
                     RequestParams,
                     f.name,
@@ -106,7 +117,15 @@ pub const Result = union(enum) {
 
     pub fn jsonStringify(self: Result, stream: anytype) !void {
         const active_tag = std.meta.activeTag(self);
-        try stream.write(@field(self, @tagName(active_tag)));
+        inline for (std.meta.fields(Result)) |f| {
+            if (std.mem.eql(u8, f.name, @tagName(active_tag))) {
+                if (f.type == void) {
+                    try stream.write(null);
+                    return;
+                }
+                try stream.write(@field(self, f.name));
+            }
+        }
     }
     pub fn typeFromMethod(comptime method: []const u8) type {
         if (!@hasField(Result, method)) return void;
